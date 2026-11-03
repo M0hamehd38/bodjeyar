@@ -1,0 +1,409 @@
+@import 'tailwindcss';
+
+/*
+  هویت بصری سایپا استوار — همان توکن‌های «میز کار سازمانی» و «ارزشیابی عملکرد».
+  آرام، اداری، کم‌رنگ — تا جدول‌های عددی بودجه خوانا بمانند. همه‌ی فاصله‌ها با
+  ابزارهای منطقی (ms/me/ps/pe/start/end) نوشته می‌شوند تا راست‌به‌چپ خودکار درست باشد.
+*/
+
+@theme {
+  --font-sans: 'Estedad', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-doc: 'Parastoo', 'Estedad', serif;
+
+  /* نارنجی آرم (500 = #FF7900) و سرمه‌ای پوستر رسمی (900 = #0D2041) */
+  --color-brand-50: #fff5eb;
+  --color-brand-100: #ffe6cf;
+  --color-brand-200: #ffcb9c;
+  --color-brand-300: #ffa95e;
+  --color-brand-400: #ff8c2b;
+  --color-brand-500: #ff7900;
+  --color-brand-600: #e06400;
+  --color-brand-700: #b34e00;
+  --color-brand-800: #863b03;
+  --color-brand-900: #5a2804;
+
+  --color-navy-50: #f5f7fa;
+  --color-navy-100: #edf0f5;
+  --color-navy-200: #dde2eb;
+  --color-navy-300: #c3cbd8;
+  --color-navy-400: #8f9ab0;
+  --color-navy-500: #66728c;
+  --color-navy-600: #4b5772;
+  --color-navy-700: #334160;
+  --color-navy-800: #1b2d52;
+  --color-navy-900: #0d2041;
+  --color-navy-950: #071530;
+
+  /* خاکستری‌ها متمایل به همان سرمه‌ای */
+  --color-slate-50: #f5f7fa;
+  --color-slate-100: #edf0f5;
+  --color-slate-200: #dde2eb;
+  --color-slate-300: #c3cbd8;
+  --color-slate-400: #8f9ab0;
+  --color-slate-500: #66728c;
+  --color-slate-600: #4b5772;
+  --color-slate-700: #334160;
+  --color-slate-800: #1b2d52;
+  --color-slate-900: #0d2041;
+  --color-slate-950: #071530;
+
+  --color-page: #eef1f5;
+  --color-surface: #ffffff;
+
+  /* چهار سطح وضعیت */
+  --color-ok: #15803d;
+  --color-ok-soft: #f0fdf4;
+  --color-attention: #a16207;
+  --color-attention-soft: #fefce8;
+  --color-warn: #c2410c;
+  --color-warn-soft: #fff7ed;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fef2f2;
+
+  --color-ai-violet: #e06400;
+  --color-ai-fuchsia: #ff7900;
+
+  --shadow-card: 0 1px 2px rgba(13, 32, 65, 0.04), 0 4px 16px -6px rgba(13, 32, 65, 0.08);
+  --shadow-lift: 0 2px 4px rgba(13, 32, 65, 0.06), 0 12px 32px -8px rgba(13, 32, 65, 0.18);
+  --shadow-ai: 0 10px 30px -18px rgba(224, 100, 0, 0.45);
+  --shadow-primary: 0 1px 2px 0 rgba(90, 40, 4, 0.2);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* ارقام فارسی در متن (ss01 فونت Estedad) */
+  body {
+    @apply text-slate-800 antialiased;
+    background-color: var(--color-page);
+    font-feature-settings: 'ss01';
+    letter-spacing: -0.005em;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #c3cbd8 transparent;
+  }
+
+  ::selection {
+    @apply bg-brand-200 text-navy-900;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-bold text-navy-900;
+  }
+
+  h1 {
+    @apply font-black tracking-tight;
+  }
+
+  th {
+    @apply font-medium text-slate-600;
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* حلقه‌ی تمرکز همیشه دیده شود — ورود داده با کلید Tab انجام می‌شود */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
+
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  code,
+  pre {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    direction: ltr;
+    text-align: left;
+  }
+}
+
+@layer components {
+  /* جعبه‌ی ورودی استاندارد. متن عدد فارسی است و چپ‌چین نمی‌شود. */
+  .field-input {
+    @apply min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 transition-shadow
+      placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 focus:outline-none
+      disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 read-only:bg-slate-50;
+  }
+  .field-input-sm {
+    @apply min-h-9 rounded-lg px-2.5 py-1.5 text-sm;
+  }
+  .field-input-invalid {
+    @apply border-danger bg-danger-soft focus:border-danger focus:ring-danger/20;
+  }
+  /* ورودی مبلغ داخل جدول بودجه — جمع‌وجور، ارقام فارسی با جداکننده */
+  .amount-input {
+    @apply min-h-9 w-full min-w-24 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-navy-900 tabular-nums
+      placeholder:text-slate-300 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 focus:outline-none read-only:border-transparent read-only:bg-transparent;
+  }
+
+  .card {
+    @apply min-w-0 rounded-2xl border border-slate-200/80 bg-white shadow-card;
+  }
+
+  .page-title {
+    @apply text-xl font-black tracking-tight text-navy-900 sm:text-[26px];
+  }
+
+  /* جدول دفتری: سرستون آرام، ردیف با hover ملایم نارنجی */
+  .ledger {
+    @apply w-full border-collapse text-sm;
+  }
+  .ledger thead th {
+    @apply border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-start text-xs font-medium whitespace-nowrap text-slate-600;
+  }
+  .ledger tbody td {
+    @apply border-b border-slate-100 px-3 py-2.5 align-middle;
+  }
+  .ledger tbody tr {
+    @apply transition-colors hover:bg-brand-50/40;
+  }
+  .ledger tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .ledger tfoot td {
+    @apply border-t-2 border-slate-200 bg-slate-50 px-3 py-2.5 font-bold text-navy-900;
+  }
+  .ledger .n {
+    @apply text-end whitespace-nowrap;
+  }
+  .ledger tr.group td {
+    @apply bg-navy-50 py-1.5 text-xs font-bold text-navy-700;
+  }
+  /* نوار وضعیت کنار ردیف (سمت شروع) */
+  .ledger tr[data-st] td:first-child {
+    box-shadow: inset -3px 0 0 var(--row-st, transparent);
+  }
+  .ledger tr[data-st='ok'] {
+    --row-st: var(--color-ok);
+  }
+  .ledger tr[data-st='warn'] {
+    --row-st: var(--color-attention);
+  }
+  .ledger tr[data-st='bad'] {
+    --row-st: var(--color-danger);
+  }
+  .ledger tr[data-st='none'] {
+    --row-st: var(--color-slate-300);
+  }
+}
+
+/*
+  هویت بصری هوش مصنوعی — فقط روی قابلیت‌های هوشمند، تا کاربر همیشه بداند متن
+  را ماشین پیشنهاد داده است. حرکت‌ها با prefers-reduced-motion خاموش می‌شوند.
+*/
+@layer components {
+  .ai-surface {
+    position: relative;
+    isolation: isolate;
+    border: 1px solid transparent;
+    border-radius: 1rem;
+    background:
+      linear-gradient(#fff, #fff) padding-box,
+      linear-gradient(135deg, var(--color-brand-300), #ffa95e 55%, #ffcb9c) border-box;
+    box-shadow: var(--shadow-ai);
+  }
+  .ai-surface::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background:
+      radial-gradient(28rem 10rem at 100% 0, rgb(13 32 65 / 0.09), transparent 70%),
+      radial-gradient(22rem 10rem at 0 0, rgb(224 100 0 / 0.08), transparent 70%);
+    pointer-events: none;
+  }
+
+  .ai-badge {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    border-radius: 0.8rem;
+    color: white;
+    background: linear-gradient(135deg, var(--color-brand-500), var(--color-ai-violet) 70%, var(--color-ai-fuchsia));
+    box-shadow: 0 6px 14px -6px rgb(224 100 0 / 0.6);
+  }
+
+  .ai-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    overflow: hidden;
+    min-height: 2.5rem;
+    border-radius: 9999px;
+    padding: 0.5rem 1.1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: white;
+    white-space: nowrap;
+    background: linear-gradient(120deg, var(--color-brand-600), var(--color-ai-violet) 65%, var(--color-ai-fuchsia));
+    background-size: 160% 100%;
+    box-shadow:
+      0 8px 18px -10px rgb(224 100 0 / 0.8),
+      inset 0 1px 0 rgb(255 255 255 / 0.18);
+    transition:
+      background-position 400ms ease,
+      transform 150ms ease,
+      box-shadow 200ms ease;
+  }
+  .ai-btn:hover:not(:disabled) {
+    background-position: 100% 0;
+    transform: translateY(-1px);
+  }
+  .ai-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.35) 50%, transparent 70%);
+    transform: translateX(120%);
+    pointer-events: none;
+  }
+  .ai-btn:hover:not(:disabled)::after {
+    animation: ai-sweep 900ms ease;
+  }
+  .ai-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+    box-shadow: none;
+  }
+  .ai-btn[data-pending='true'] {
+    opacity: 1;
+    cursor: progress;
+    background-size: 300% 100%;
+    animation: ai-flow 2.4s linear infinite;
+  }
+
+  .ai-btn-soft {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2.25rem;
+    border-radius: 9999px;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.8125rem;
+    color: #b34e00;
+    background: rgb(224 100 0 / 0.08);
+    transition: background-color 150ms ease;
+  }
+  .ai-btn-soft:hover:not(:disabled) {
+    background: rgb(224 100 0 / 0.15);
+  }
+  .ai-btn-soft:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .ai-skeleton {
+    height: 0.6rem;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, rgb(224 100 0 / 0.08), rgb(13 32 65 / 0.22), rgb(224 100 0 / 0.08));
+    background-size: 200% 100%;
+    animation: ai-flow 1.6s linear infinite;
+  }
+
+  .ai-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 9999px;
+    padding: 0.1rem 0.55rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: #b34e00;
+    background: linear-gradient(90deg, rgb(13 32 65 / 0.1), rgb(224 100 0 / 0.12));
+    white-space: nowrap;
+  }
+
+  .ai-typing span {
+    display: inline-block;
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-inline: 0.1rem;
+    border-radius: 9999px;
+    background: var(--color-ai-violet);
+    animation: ai-bounce 1.2s ease-in-out infinite;
+  }
+  .ai-typing span:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  .ai-typing span:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+}
+
+@keyframes ai-sweep {
+  from {
+    transform: translateX(120%);
+  }
+  to {
+    transform: translateX(-120%);
+  }
+}
+@keyframes ai-flow {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+@keyframes ai-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+@keyframes toast-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+
+/* چاپ گزارش: بدون رنگ پس‌زمینه و بدون عناصر کنترلی */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  .card {
+    border-color: #c3cbd8;
+    box-shadow: none;
+    break-inside: avoid;
+  }
+}
