@@ -11,6 +11,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { BrandMark } from '@/components/brand';
 import { Icon, type IconName } from '@/components/icons';
+import { PageAssistant } from '@/components/page-assistant';
 import { brand } from '@/lib/brand';
 import { fa, MONTHS, todayFa } from '@/lib/format';
 import { ROLE_LABEL } from '@/lib/ledger';
@@ -177,7 +178,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (!me) return null;
 
   const pending = can('approve') ? ledger.pendingCount() : 0;
+  const proposals = data.proposals.filter((p) => p.status === 'pending').length;
   const groups: NavGroup[] = [
+    {
+      title: 'هوش مصنوعی',
+      items: [{ href: '/agent', label: 'ایجنت مالی', icon: 'sparkles', badge: proposals }],
+    },
     {
       title: 'برنامه',
       items: [
@@ -191,8 +197,16 @@ export function AppShell({ children }: { children: ReactNode }) {
       title: 'عملکرد و تحلیل',
       items: [
         { href: '/actual', label: 'عملکرد واقعی', icon: 'pulse' },
+        { href: '/entries', label: 'ریز اسناد', icon: 'list' },
         { href: '/variance', label: 'گزارش انحراف', icon: 'alert' },
         { href: '/reports', label: 'گزارش‌ها', icon: 'chart' },
+      ],
+    },
+    {
+      title: 'حساب‌ها و نیرو',
+      items: [
+        { href: '/accounts', label: 'مطالبات و بدهی‌ها', icon: 'inbox' },
+        { href: '/staff', label: 'پرسنل و حقوق', icon: 'users' },
       ],
     },
     {
@@ -298,6 +312,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main id="main-content" tabIndex={-1} className="mx-auto max-w-7xl px-4 py-6 outline-none sm:px-6 sm:py-8 lg:px-8">
         {children}
       </main>
+      <PageAssistant />
     </div>
   );
 }

@@ -40,7 +40,7 @@ export default function VariancePage() {
   const [f, setF] = useState({ mi: 'all', type: '', only: true });
   const [editing, setEditing] = useState<string | null>(null);
   const [sug, setSug] = useState<Record<string, Suggestion>>({});
-  const task = useAiTask();
+  const task = useAiTask('variance_reason');
 
   const head = (title: string, desc?: string) => <PageHeader eyebrow="گزارش انحراف" title={title} description={desc} actions={<PeriodSelect />} />;
   if (!p)

@@ -14,12 +14,27 @@ export interface Org {
   name: string;
 }
 
+/** دو مدل هوش مصنوعی — همان «مدل دقیق» و «مدل روزمره»ی هوش سازمانی. */
+export type AiTier = 'precise' | 'everyday';
+
 export interface Settings {
   id?: string;
   green: number;
   yellow: number;
   scen: { cons: { rev: number; exp: number }; opt: { rev: number; exp: number } };
   has_sample: boolean;
+  /** مدل هر کاربرد هوش مصنوعی؛ نبودن یعنی پیش‌فرض همان کاربرد */
+  ai_tiers?: Partial<Record<string, AiTier>>;
+  /** آخرین ورود از فایل اکسل اطلاعات اولیه */
+  import_info?: ImportInfo;
+}
+
+export interface ImportInfo {
+  file: string;
+  at: string;
+  by: string;
+  counts: Record<string, number>;
+  warnings: string[];
 }
 
 export interface User {
@@ -42,6 +57,8 @@ export interface Center {
   order: number;
   /** مرکز درآمد → واحد (مرکز هزینه) مرتبط */
   link?: string;
+  /** گروه مرکز درآمد (مثلاً «فروش خودرو» برای کمیسیون هر خودروساز) */
+  group?: string;
   has_staff?: boolean;
   created_at?: string;
 }
@@ -67,6 +84,9 @@ export interface Period {
   created_by: string;
   created_at: string;
   sample?: boolean;
+  /** دوره‌ی مرجع: عملکرد واقعی ثبت شده ولی بودجه‌ای برایش تدوین نشده */
+  history?: boolean;
+  imported?: boolean;
 }
 
 export interface RevenueRow {
@@ -194,6 +214,103 @@ export interface InvTrack {
   sample?: boolean;
 }
 
+/** ریز هر قلم سند (ردیف فایل حسابداری) — مبنای عدد ماه، تا هیچ جزئیاتی گم نشود. */
+export interface Entry {
+  id: string;
+  month: string; // 1405-01
+  type: LineType;
+  /** کلید همان ردیف در عملکرد: مرکز درآمد، head|center یا مرکز حقوق */
+  key: string;
+  center: string;
+  head?: string;
+  /** شرح اصلی همان‌طور که در فایل آمده */
+  desc: string;
+  sub?: string;
+  amount: string;
+  kind?: 'fixed' | 'variable';
+  shared?: boolean;
+  status?: string;
+  note?: string;
+  ref?: string;
+  source: string;
+  imported?: boolean;
+}
+
+/** حقوق یک نفر در یک ماه — ستون‌های شیت «حقوق و مزایا». */
+export interface StaffPay {
+  id: string;
+  month: string;
+  person: string;
+  unit: string;
+  center?: string;
+  base: string;
+  overtime: string;
+  benefits: string;
+  bonus: string;
+  insurance: string;
+  eidi: string;
+  commute: string;
+  card: string;
+  total: string;
+  note?: string;
+  source: string;
+  imported?: boolean;
+}
+
+export type AccountKind = 'receivable' | 'payable';
+export type AccountStatus = 'open' | 'partial' | 'settled';
+
+/** مطالبات و حساب‌های پرداختنی مهم */
+export interface Account {
+  id: string;
+  kind: AccountKind;
+  party: string;
+  category?: string;
+  amount: string;
+  /** مبلغ وصول یا پرداخت‌شده (اگر بخشی تسویه شده) */
+  settled?: string;
+  status: AccountStatus;
+  created?: string;
+  due_days?: number;
+  note?: string;
+  followup?: string;
+  source?: string;
+  updated_by?: string;
+  updated_at?: string;
+  imported?: boolean;
+}
+
+/** خرید سرمایه‌ای انجام‌شده (تجهیزات، ابزار، بازسازی) */
+export interface Capex {
+  id: string;
+  month: string;
+  title: string;
+  center: string;
+  unit?: string;
+  amount: string;
+  date?: string;
+  necessity?: string;
+  status?: string;
+  vendor?: string;
+  note?: string;
+  source?: string;
+  imported?: boolean;
+}
+
+/** پیشنهاد ایجنت که فقط با تأیید آدم اعمال می‌شود */
+export interface AgentProposal {
+  id: string;
+  kind: 'variance_note' | 'budget_line' | 'account_followup' | 'task';
+  title: string;
+  detail: string;
+  payload: Record<string, unknown>;
+  status: 'pending' | 'applied' | 'dismissed';
+  by: string;
+  at: string;
+  decided_by?: string;
+  decided_at?: string;
+}
+
 export interface AuditEntry {
   at: string;
   user: string;
@@ -217,6 +334,11 @@ export interface Data {
   variances: Record<string, VarianceNote>;
   inv: Record<string, InvTrack>;
   audit: Record<string, { entries: AuditEntry[] }>;
+  entries: Entry[];
+  staff: StaffPay[];
+  accounts: Account[];
+  capex: Capex[];
+  proposals: AgentProposal[];
 }
 
 export interface Month {

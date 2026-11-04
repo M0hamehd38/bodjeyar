@@ -886,8 +886,8 @@ function ChatPanel({
   onBuilt: (next: Version) => Promise<void>;
   onPersist: () => Promise<boolean>;
 }) {
-  const chat = useAiTask();
-  const build = useAiTask();
+  const chat = useAiTask('budget_chat');
+  const build = useAiTask('budget_build');
   const [text, setText] = useState('');
   const [askClear, setAskClear] = useState(false);
   const log = (d.ai_chat || []).filter((t) => t.content && t.content.trim());

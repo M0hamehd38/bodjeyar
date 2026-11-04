@@ -47,14 +47,24 @@ export function NoPeriod() {
       title="هنوز دوره بودجه‌ای تعریف نشده است"
       icon={<Icon.calendar size={20} />}
       action={
-        can('edit_budget') ? (
-          <Link href="/budget">
-            <Button variant="primary">رفتن به بودجه‌ریزی</Button>
-          </Link>
-        ) : undefined
+        <div className="flex flex-wrap justify-center gap-2">
+          {can('settings') && (
+            <Link href="/settings?tab=data">
+              <Button variant="primary">
+                <Icon.upload size={16} />
+                ورود فایل اکسل اطلاعات اولیه
+              </Button>
+            </Link>
+          )}
+          {can('edit_budget') && (
+            <Link href="/budget">
+              <Button variant={can('settings') ? 'secondary' : 'primary'}>رفتن به بودجه‌ریزی</Button>
+            </Link>
+          )}
+        </div>
       }
     >
-      اول در بخش «بودجه‌ریزی» یک دوره (مثلاً شش‌ماهه دوم) بسازید.
+      فایل اکسل «اطلاعات اولیه بودجه» را وارد کنید تا همه‌ی بخش‌ها ساخته شوند، یا در «بودجه‌ریزی» یک دوره بسازید.
     </EmptyState>
   );
 }
@@ -62,6 +72,25 @@ export function NoPeriod() {
 export function NoBudget({ p }: { p: Period }) {
   const { ledger } = useStore();
   const o = ledger.openV(p.id);
+  if (ledger.isHistory(p))
+    return (
+      <EmptyState
+        title={`${p.title} دوره‌ی مرجع است`}
+        icon={<Icon.archive size={20} />}
+        action={
+          <div className="flex flex-wrap justify-center gap-2">
+            <Link href="/">
+              <Button>داشبورد عملکرد</Button>
+            </Link>
+            <Link href="/budget">
+              <Button variant="primary">بودجه‌ی دوره‌ی بعد</Button>
+            </Link>
+          </div>
+        }
+      >
+        این دوره عملکرد واقعی دارد ولی بودجه ندارد؛ پس انحراف و اصلاحیه برایش معنا ندارد. از دوره‌ی بعد (با بودجه‌ی تأییدشده) اینجا مقایسه می‌شود.
+      </EmptyState>
+    );
   return (
     <EmptyState
       title={`بودجه تأییدشده‌ای برای ${p.title} نیست`}

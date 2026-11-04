@@ -1,115 +1,103 @@
 /**
- * دستیار هوش مصنوعی — Claude از سمت سرور. کلید API هرگز به مرورگر نمی‌رود.
+ * دستیار هوش مصنوعی — سمت سرور. کلیدها هرگز به مرورگر نمی‌روند.
+ *
+ * دو مدل مثل «هوش سازمانی»: «مدل دقیق» و «مدل روزمره»؛ مرورگر سطح هر کاربرد را
+ * از تنظیمات سازمان می‌فرستد و این مسیر آن را به مدل و کلید همان سطح می‌برد.
+ *
+ * ابزارها (tools) برای ایجنت: این مسیر فقط یک دور مدل را اجرا می‌کند و اگر مدل
+ * ابزاری خواست، همان را برمی‌گرداند؛ ابزارها در مرورگر روی داده‌ی همان کاربر
+ * اجرا می‌شوند (داده‌ی بودجه‌یار در مرورگر است، نه روی سرور).
  *
  * هوش مصنوعی پیش‌نویس می‌دهد؛ تأیید، بستن ماه و ارسال نهایی همیشه با آدم است.
- * بدون ANTHROPIC_API_KEY مسیر GET می‌گوید «خاموش» و رابط بخش‌های هوشمند را پنهان می‌کند.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import { NextResponse } from 'next/server';
+import { isTier } from '@/lib/ai-purposes';
+import { AiFail, chat, extractJson, loadAiConfig, type ChatMessage, type ToolDef } from '@/lib/ai-server';
+import type { AiTier } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-const MODEL = process.env.AI_MODEL || 'claude-opus-5-5';
-const MODEL_COMPLEX = process.env.AI_MODEL_COMPLEX || 'claude-opus-5-5';
-const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
-type ImageType = (typeof IMAGE_TYPES)[number];
-
-const enabled = () => !!process.env.ANTHROPIC_API_KEY;
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 export function GET() {
-  return NextResponse.json({ on: enabled(), images: enabled() });
+  const c = loadAiConfig();
+  return NextResponse.json({
+    on: c.configured,
+    images: c.configured,
+    tools: c.configured,
+    provider: c.provider,
+    tiers: {
+      precise: { model: c.tiers.precise.model, on: c.tiers.precise.on },
+      everyday: { model: c.tiers.everyday.model, on: c.tiers.everyday.on },
+    },
+    missing: c.enabled ? c.missing : ['AI_ENABLED=0'],
+  });
 }
 
 interface Body {
-  /** گفت‌وگو؛ پیام اول دستور کار است */
-  messages: { role: 'user' | 'assistant'; content: string }[];
+  messages: ChatMessage[];
   system?: string;
   json?: boolean;
+  tier?: AiTier;
+  /** سازگاری با فراخوانی‌های قدیمی: complex ⇒ مدل دقیق */
   complex?: boolean;
-  effort?: 'low' | 'medium' | 'high';
+  tools?: ToolDef[];
   images?: { media_type: string; data: string }[];
+  max_tokens?: number;
+  temperature?: number;
 }
 
 const fail = (code: string, status = 400) => NextResponse.json({ error: code }, { status });
 
-/** اولین شیء یا آرایه‌ی JSON داخل متن پاسخ. */
-function extractJson(text: string): unknown {
-  const t = text.replace(/```(?:json)?/g, '').trim();
-  const start = t.search(/[[{]/);
-  if (start < 0) throw new Error('no json');
-  const open = t[start]!;
-  const close = open === '{' ? '}' : ']';
-  const end = t.lastIndexOf(close);
-  return JSON.parse(t.slice(start, end + 1));
-}
-
 export async function POST(req: Request) {
-  if (!enabled()) return fail('sampling_disabled', 503);
+  const cfg = loadAiConfig();
+  if (!cfg.configured) return fail('sampling_disabled', 503);
   let body: Body;
   try {
     body = (await req.json()) as Body;
   } catch {
     return fail('invalid_request');
   }
-  const turns = (body.messages || []).filter((m) => m && typeof m.content === 'string' && m.content.trim());
-  if (!turns.length || turns[0]!.role !== 'user') return fail('invalid_request');
-  const size = JSON.stringify(turns).length;
-  if (size > 400_000) return fail('prompt_too_large');
+  const turns = (body.messages || []).filter(
+    (m) => m && ['user', 'assistant', 'tool', 'system'].includes(m.role) && typeof m.content === 'string' && (m.content.trim() || m.tool_calls?.length || m.role === 'tool'),
+  );
+  if (!turns.some((m) => m.role === 'user')) return fail('invalid_request');
+  if (JSON.stringify(turns).length > 600_000) return fail('prompt_too_large', 413);
 
   const images = (body.images || []).slice(0, 5);
-  for (const im of images)
-    if (!IMAGE_TYPES.includes(im.media_type as ImageType) || im.data.length > 27_000_000) return fail('image_rejected');
+  for (const im of images) if (!IMAGE_TYPES.includes(im.media_type) || im.data.length > 27_000_000) return fail('image_rejected');
 
-  const messages: Anthropic.MessageParam[] = turns.map((m, i) =>
-    i === 0 && images.length
-      ? {
-          role: 'user',
-          content: [
-            ...images.map(
-              (im): Anthropic.ImageBlockParam => ({
-                type: 'image',
-                source: { type: 'base64', media_type: im.media_type as ImageType, data: im.data },
-              }),
-            ),
-            { type: 'text', text: m.content },
-          ],
-        }
-      : { role: m.role, content: m.content },
-  );
+  const tools = (body.tools || []).slice(0, 40).filter((t) => t && /^[a-zA-Z0-9_-]{1,64}$/.test(t.name));
+  const tier: AiTier = isTier(body.tier) ? body.tier : body.complex || images.length ? 'precise' : 'everyday';
+  const messages: ChatMessage[] = [
+    ...(body.system ? [{ role: 'system' as const, content: body.system }] : []),
+    ...turns,
+  ];
 
-  const client = new Anthropic();
   try {
-    // fallbacks: اگر طبقه‌بند ایمنی درخواستی را رد کند، API همان درخواست را روی مدل جایگزین اجرا می‌کند
-    const params = {
-      model: body.complex ? MODEL_COMPLEX : MODEL,
-      max_tokens: 16000,
-      system: body.system,
-      messages,
-      output_config: { effort: body.effort || (body.complex ? 'high' : 'medium') },
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-    } as unknown as Anthropic.Beta.MessageCreateParamsNonStreaming;
-    const res = await client.beta.messages.create(params, { signal: req.signal });
-    if (res.stop_reason === 'refusal') return fail('refused', 422);
-    const text = res.content
-      .map((b) => (b.type === 'text' ? b.text : ''))
-      .join('')
-      .trim();
+    const res = await chat(cfg, messages, {
+      tier,
+      tools: tools.length ? tools : undefined,
+      json: body.json,
+      images,
+      maxTokens: Math.min(Math.max(body.max_tokens || 12000, 256), 32000),
+      temperature: body.temperature,
+      signal: req.signal,
+    });
+    if (res.finish === 'refusal') return fail('refused', 422);
+    if (res.toolCalls.length) return NextResponse.json({ text: res.content, tool_calls: res.toolCalls, model: res.model, tier });
+    const text = res.content.trim();
     if (!text) return fail('empty_completion', 502);
-    if (!body.json) return NextResponse.json({ text });
+    if (!body.json) return NextResponse.json({ text, model: res.model, tier });
     try {
-      return NextResponse.json({ json: extractJson(text) });
+      return NextResponse.json({ json: extractJson(text), model: res.model, tier });
     } catch {
       return fail('invalid_json', 502);
     }
   } catch (e) {
-    if (e instanceof Anthropic.RateLimitError) return fail('rate_limited', 429);
-    if (e instanceof Anthropic.AuthenticationError) return fail('sampling_disabled', 503);
-    if (e instanceof Anthropic.BadRequestError) return fail('invalid_request', 400);
-    if (e instanceof Anthropic.APIUserAbortError) return fail('cancelled', 499);
-    if (e instanceof Anthropic.APIError) return fail('upstream', 502);
+    if (e instanceof AiFail) return fail(e.code, e.status);
     return fail('upstream', 502);
   }
 }

@@ -6,7 +6,7 @@ import { Suspense, useState } from 'react';
 import { ApprovalPanel } from '@/components/approval';
 import { PeriodSelect, SampleBanner, VersionBadge } from '@/components/budget';
 import { Icon } from '@/components/icons';
-import { Button, Card, CardHeader, EmptyState, ErrorText, Field, Input, Modal, PageHeader, Segmented, Select, Stat, TableWrap } from '@/components/ui';
+import { Alert, Button, Card, CardHeader, EmptyState, ErrorText, Field, Input, Modal, PageHeader, Segmented, Select, Stat, TableWrap } from '@/components/ui';
 import { Wizard } from '@/components/wizard';
 import { errMsg } from '@/lib/backend';
 import { compact, fa, jFa, MONTHS, nf, pctFa, tm, today } from '@/lib/format';
@@ -33,7 +33,7 @@ function Budget() {
 }
 
 function BudgetHome({ open }: { open: (id: string, step?: number) => void }) {
-  const { period: p, ledger: L, can, repo, toast } = usePeriod();
+  const { period: p, ledger: L, can, repo, toast, setPid } = usePeriod();
   const [newPeriod, setNewPeriod] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -89,6 +89,25 @@ function BudgetHome({ open }: { open: (id: string, step?: number) => void }) {
       <SampleBanner />
       {ov && ov.status === 'submitted' && <ApprovalPanel v={ov} onReview={() => open(ov.id)} />}
 
+      {!vs.length && L.isHistory(p) && (() => {
+        const nx = L.d.periods.find((q) => q.id !== p.id && (L.openV(q.id) || L.activeV(q.id)));
+        return (
+          <Alert
+            tone="info"
+            className="mb-4"
+            action={
+              nx ? (
+                <Button size="sm" variant="primary" onClick={() => setPid(nx.id)}>
+                  رفتن به {nx.title}
+                </Button>
+              ) : undefined
+            }
+          >
+            «{p.title}» دوره‌ی مرجع است: عملکرد واقعی دارد و مبنای بودجه‌ی دوره‌ی بعد است.
+            {nx ? ` پیش‌نویس بودجه‌ی ${nx.title} از روی همین عملکرد آماده است.` : ''}
+          </Alert>
+        );
+      })()}
       {!vs.length && (
         <EmptyState
           title={can('edit_budget') ? 'بودجه این دوره هنوز تدوین نشده' : 'بودجه‌ای ثبت نشده'}

@@ -23,11 +23,12 @@ export default function InvestmentPage() {
       </>
     );
   const v = L.activeV(p.id) || L.openV(p.id);
+  const done = L.d.capex.filter((x) => monthsOf(p).some((m) => m.k === x.month));
   if (!v)
     return (
       <>
-        {head('پروژه‌های سرمایه‌گذاری', p.title)}
-        <NoBudget p={p} />
+        {head(done.length ? `سرمایه‌گذاری ${p.title}` : 'پروژه‌های سرمایه‌گذاری', p.title)}
+        {done.length ? <CapexCard p={p} /> : <NoBudget p={p} />}
       </>
     );
 
@@ -42,6 +43,7 @@ export default function InvestmentPage() {
     <>
       {head(`پروژه‌های ${p.title}`, approved ? `مبنا: ${vLabel(v)} تأییدشده` : `${vLabel(v)} هنوز تأیید نشده؛ پروژه‌ها در حد برنامه‌اند.`)}
       <SampleBanner />
+      {done.length > 0 && <CapexCard p={p} />}
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="بودجه مصوب" icon={<Icon.file size={20} />} value={compact(totB)} hint={tm(totB)} />
         <Stat label="هزینه واقعی" icon={<Icon.pulse size={20} />} value={compact(totA)} hint={tm(totA)} />
@@ -231,6 +233,62 @@ function ProjectCard({
           </div>
         )
       )}
+    </Card>
+  );
+}
+
+/** خریدهای سرمایه‌ای انجام‌شده (شیت «سرمایه‌گذاری» فایل اطلاعات اولیه). */
+function CapexCard({ p }: { p: import('@/lib/types').Period }) {
+  const { ledger: L } = useStore();
+  const list = L.d.capex.filter((x) => monthsOf(p).some((m) => m.k === x.month));
+  const total = sumB(list.map((x) => x.amount));
+  const byUnit = new Map<string, bigint>();
+  list.forEach((x) => byUnit.set(x.center, (byUnit.get(x.center) || 0n) + BigInt(x.amount)));
+  return (
+    <Card className="mb-6">
+      <CardHeader
+        icon={<Icon.check size={16} />}
+        title="خریدهای سرمایه‌ای انجام‌شده"
+        subtitle={`${fa(list.length)} قلم · جمع ${tm(total)}`}
+      />
+      <div className="mb-4 flex flex-wrap gap-2">
+        {[...byUnit.entries()]
+          .sort((a, b) => (b[1] > a[1] ? 1 : -1))
+          .map(([c, v]) => (
+            <span key={c} className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs text-navy-900">
+              {L.cName(c)}: <b>{compact(v)}</b> ({pctFa(ratio(v, total))})
+            </span>
+          ))}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="ledger">
+          <thead>
+            <tr>
+              <th>تاریخ</th>
+              <th>شرح</th>
+              <th>واحد</th>
+              <th className="n">مبلغ</th>
+              <th>وضعیت</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((x) => (
+              <tr key={x.id}>
+                <td className="whitespace-nowrap text-xs">{x.date ? fa(x.date) : MONTHS[+x.month.slice(5) - 1]}</td>
+                <td>
+                  <b className="text-navy-900">{x.title}</b>
+                  {(x.necessity || x.vendor || x.note) && <div className="text-xs text-slate-500">{[x.necessity, x.vendor, x.note].filter(Boolean).join(' · ')}</div>}
+                </td>
+                <td className="text-xs text-slate-600">{L.cName(x.center)}</td>
+                <td className="n">{compact(x.amount)}</td>
+                <td>
+                  <Badge tone="ok">{x.status || 'خریداری‌شده'}</Badge>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Card>
   );
 }

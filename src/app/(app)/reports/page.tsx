@@ -16,7 +16,7 @@ export default function ReportsPage() {
   const [r, setR] = useState<ReportFilter>({ type: 'summary', mi: 'all', mb: null, center: '', cost: '' });
   const [pdfBusy, setPdfBusy] = useState(false);
   const [narr, setNarr] = useState<Record<string, string>>({});
-  const task = useAiTask();
+  const task = useAiTask('report_summary');
 
   if (!p)
     return (

@@ -6,9 +6,11 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
+import { tierFor, type AiPurpose } from './ai-purposes';
 import { fa, MONTHS, pad, today } from './format';
 import { INV_STATUS, Ledger, monthsOf, PAY_FIELDS, V_STATUS, vLabel } from './ledger';
-import type { Period } from './types';
+import { useStore } from './store';
+import type { AiTier, Period } from './types';
 
 const ERR: Record<string, string> = {
   rate_limited: 'سقف استفاده از هوش مصنوعی پر شده؛ کمی بعد دوباره امتحان کنید.',
@@ -17,34 +19,73 @@ const ERR: Record<string, string> = {
   prompt_too_large: 'داده این درخواست زیاد است؛ بازه یا تعداد ردیف را کمتر کنید.',
   refused: 'هوش مصنوعی به این درخواست پاسخ نداد.',
   empty_completion: 'پاسخی برنگشت؛ دوباره امتحان کنید.',
-  image_rejected: 'یکی از تصاویر خوانده نشد (JPEG، PNG یا WebP تا ۲۰ مگابایت).',
+  image_rejected: 'یکی از تصاویر خوانده نشد (JPEG، PNG یا WebP تا ۲۰ مگابایت) یا مدل انتخاب‌شده تصویر نمی‌پذیرد.',
+  invalid_request: 'درخواست برای سرویس هوش مصنوعی معتبر نبود؛ دوباره امتحان کنید.',
+  upstream: 'سرویس هوش مصنوعی پاسخ نداد؛ کمی بعد دوباره امتحان کنید.',
 };
 export const aiErrText = (code?: string) => (code && ERR[code]) || 'ارتباط با هوش مصنوعی برقرار نشد؛ دوباره امتحان کنید.';
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+export interface AiMessage {
+  role: 'user' | 'assistant' | 'tool';
+  content: string;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+  name?: string;
+}
+export interface ToolDef {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
 
 export interface AiRequest {
   /** دستور کار و داده‌ها؛ گفت‌وگو در messages می‌آید */
   system?: string;
-  messages: { role: 'user' | 'assistant'; content: string }[];
+  messages: AiMessage[];
   json?: boolean;
+  /** سازگاری: complex ⇒ مدل دقیق، مگر کاربرد سطح دیگری داشته باشد */
   complex?: boolean;
   effort?: 'low' | 'medium' | 'high';
   images?: { media_type: string; data: string }[];
+  tier?: AiTier;
+  tools?: ToolDef[];
+  max_tokens?: number;
+}
+export interface AiResponse {
+  text?: string;
+  json?: unknown;
+  tool_calls?: ToolCall[];
+  model?: string;
+  tier?: AiTier;
 }
 
-async function call(req: AiRequest, signal: AbortSignal): Promise<{ text?: string; json?: unknown }> {
+/** یک دور مدل؛ خطا به شکل { code } پرتاب می‌شود. */
+export async function callAi(req: AiRequest, signal?: AbortSignal): Promise<AiResponse> {
   const r = await fetch('/api/ai', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(req),
     signal,
   });
-  const j = (await r.json().catch(() => ({}))) as { text?: string; json?: unknown; error?: string };
+  const j = (await r.json().catch(() => ({}))) as AiResponse & { error?: string };
   if (!r.ok) throw { code: j.error };
   return j;
 }
 
+/** سطح مدل یک کاربرد از تنظیمات سازمان. */
+export function useTier(purpose: AiPurpose): AiTier {
+  const { data } = useStore();
+  return tierFor(data.settings.ai_tiers, purpose);
+}
+
 /** یک کار هوش مصنوعی با وضعیت مستقل. `run` در صورت خطا یا توقف null برمی‌گرداند. */
-export function useAiTask() {
+export function useAiTask(purpose: AiPurpose) {
+  const tier = useTier(purpose);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const ctl = useRef<AbortController | null>(null);
@@ -56,7 +97,7 @@ export function useAiTask() {
     setBusy(true);
     setError('');
     try {
-      return await call(req, c.signal);
+      return await callAi({ tier, ...req }, c.signal);
     } catch (e) {
       if ((e as Error)?.name !== 'AbortError') setError(aiErrText((e as { code?: string })?.code));
       return null;
@@ -64,7 +105,7 @@ export function useAiTask() {
       ctl.current = null;
       setBusy(false);
     }
-  }, []);
+  }, [tier]);
   const stop = useCallback(() => ctl.current?.abort(), []);
   return { run, stop, busy, error, setError };
 }
@@ -155,7 +196,7 @@ export function aiPeriodData(L: Ledger, p: Period) {
 
 /** میانگین ماهانه‌ی دوره‌ی قبلِ دارای عملکرد — مرجع تخمین برای بودجه‌ی تازه. */
 export function aiReference(L: Ledger, p: Period) {
-  const prev = L.d.periods.filter((q) => q.id !== p.id && L.activeV(q.id) && L.monthsWithActual(q).length).at(-1);
+  const prev = L.d.periods.filter((q) => q.id !== p.id && L.monthsWithActual(q).length).at(-1);
   if (!prev) return null;
   const idx = L.monthsWithActual(prev).map((m) => m.i);
   const rows = L.analyze(prev.id, idx).rows;

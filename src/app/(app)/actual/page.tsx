@@ -29,7 +29,8 @@ export default function ActualPage() {
         <NoPeriod />
       </>
     );
-  const v = L.activeV(p.id);
+  const hist = !L.activeV(p.id) && L.isHistory(p);
+  const v = L.activeV(p.id) ?? (hist ? L.entryVersion(p) : null);
   if (!v)
     return (
       <>
@@ -46,8 +47,13 @@ export default function ActualPage() {
 
   return (
     <>
-      {head(`${p.title} · مبنا: ${vLabel(v)}`)}
+      {head(hist ? `${p.title} · دوره‌ی مرجع (بدون بودجه)` : `${p.title} · مبنا: ${vLabel(v)}`)}
       <SampleBanner />
+      {hist && (
+        <Alert tone="info" className="mb-4">
+          این دوره بودجه ندارد؛ ارقام <b>عملکرد واقعی</b> از فایل اطلاعات اولیه وارد شده‌اند و ماه‌ها بسته‌اند. ریز هر عدد در بخش «ریز اسناد» هست.
+        </Alert>
+      )}
       <Card>
         <Tabs
           label="ماه"
@@ -133,7 +139,7 @@ export default function ActualPage() {
             ]}
           />
         </div>
-        {tab === 'bills' ? <BillsPanel key={m.k} L={L} p={p} m={m} ro={ro} /> : <ActualTable key={`${m.k}-${tab}-${a?.rev ?? 0}`} L={L} p={p} v={v} m={m} type={tab} ro={ro} />}
+        {tab === 'bills' ? <BillsPanel key={m.k} L={L} p={p} m={m} ro={ro} /> : <ActualTable key={`${m.k}-${tab}-${a?.rev ?? 0}`} L={L} p={p} v={v} m={m} type={tab} ro={ro} noBudget={hist} />}
       </Card>
     </>
   );
@@ -141,7 +147,7 @@ export default function ActualPage() {
 
 /* ------------------------------------------------------------------ */
 
-function ActualTable({ L, p, v, m, type, ro }: { L: Ledger; p: Period; v: Version; m: Month; type: LineType; ro: boolean }) {
+function ActualTable({ L, p, v, m, type, ro, noBudget }: { L: Ledger; p: Period; v: Version; m: Month; type: LineType; ro: boolean; noBudget?: boolean }) {
   const { repo, toast } = useStore();
   const saved = L.d.actuals[m.k]?.[type] || {};
   const [vals, setVals] = useState<Record<string, string>>(() => ({ ...saved }));
@@ -188,11 +194,17 @@ function ActualTable({ L, p, v, m, type, ro }: { L: Ledger; p: Period; v: Versio
           <thead>
             <tr>
               <th>{type === 'revenue' ? 'مرکز درآمد' : type === 'payroll' ? 'واحد' : 'سرفصل / مرکز'}</th>
-              <th className="n">بودجه ماه</th>
+              {!noBudget && <th className="n">بودجه ماه</th>}
               <th>عملکرد واقعی</th>
-              <th className="n">اختلاف</th>
-              <th className="n">درصد تحقق</th>
-              <th>وضعیت</th>
+              {noBudget ? (
+                <th className="n">ریز اسناد</th>
+              ) : (
+                <>
+                  <th className="n">اختلاف</th>
+                  <th className="n">درصد تحقق</th>
+                  <th>وضعیت</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -212,17 +224,18 @@ function ActualTable({ L, p, v, m, type, ro }: { L: Ledger; p: Period; v: Versio
               const st = show ? L.statusOf(budget, val) : 'none';
               const diff = val - budget;
               return (
-                <tr key={l.key} data-st={st}>
+                <tr key={l.key} data-st={noBudget ? undefined : st}>
                   <td>
                     <b className="text-navy-900">{type === 'revenue' ? L.cName(l.center) : l.label}</b>
+                    {type === 'revenue' && L.centerById(l.center)?.group && <div className="text-xs text-slate-500">{L.centerById(l.center)?.group}</div>}
                     {type !== 'revenue' && (
                       <div className="text-xs text-slate-500">
                         {L.cName(l.center)}
-                        {l.unbudgeted && ' · بدون بودجه'}
+                        {l.unbudgeted && !noBudget && ' · بدون بودجه'}
                       </div>
                     )}
                   </td>
-                  <td className="n">{nf(budget)}</td>
+                  {!noBudget && <td className="n">{nf(budget)}</td>}
                   <td className="min-w-40">
                     {util ? (
                       <span className="flex items-center gap-2">
@@ -238,11 +251,22 @@ function ActualTable({ L, p, v, m, type, ro }: { L: Ledger; p: Period; v: Versio
                       />
                     )}
                   </td>
-                  <td className={cx('n', show && (favorable(type, diff) ? 'text-ok' : 'text-danger'))}>{show ? nf(diff) : '—'}</td>
-                  <td className="n">{pctFa(ratio(val, budget))}</td>
-                  <td>
-                    <StatusBadge st={st} />
-                  </td>
+                  {noBudget ? (
+                    <td className="n text-xs text-slate-500">
+                      {(() => {
+                        const n = L.d.entries.filter((e) => e.month === m.k && e.type === type && e.key === l.key).length;
+                        return n ? `${nf(n)} ردیف` : util ? 'قبوض' : '—';
+                      })()}
+                    </td>
+                  ) : (
+                    <>
+                      <td className={cx('n', show && (favorable(type, diff) ? 'text-ok' : 'text-danger'))}>{show ? nf(diff) : '—'}</td>
+                      <td className="n">{pctFa(ratio(val, budget))}</td>
+                      <td>
+                        <StatusBadge st={st} />
+                      </td>
+                    </>
+                  )}
                 </tr>
               );
             })}
@@ -287,7 +311,7 @@ function ActualTable({ L, p, v, m, type, ro }: { L: Ledger; p: Period; v: Versio
             <Button variant="primary" disabled={busy} onClick={() => void save()}>
               ذخیره {TYPE_LABEL[type]} {MONTHS[m.jm - 1]}
             </Button>
-            <span className="text-xs text-slate-500">فرمول: اختلاف = واقعی − بودجه · تحقق = واقعی ÷ بودجه × ۱۰۰</span>
+            {!noBudget && <span className="text-xs text-slate-500">فرمول: اختلاف = واقعی − بودجه · تحقق = واقعی ÷ بودجه × ۱۰۰</span>}
           </>
         )}
       </div>
@@ -565,7 +589,7 @@ interface DocItem {
 
 function DocReader({ L, p, m, v }: { L: Ledger; p: Period; m: Month; v: Version }) {
   const { ai, repo, toast, audit } = useStore();
-  const task = useAiTask();
+  const task = useAiTask('doc_read');
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [text, setText] = useState('');

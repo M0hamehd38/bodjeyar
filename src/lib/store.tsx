@@ -22,8 +22,15 @@ import { clearSession, hashPw, makeUser, sessionUser, setSession } from './auth'
 import { B, clone, fa, jParse, localIso, mkLabel, nf, nowIso, pad, today, uid } from './format';
 import { BILL_TYPES, INV_STATUS, Ledger, roleCan, vLabel, type Perm } from './ledger';
 import { defaultStructure, sampleData } from './sample';
+import { importInfo } from './import-apply';
+import type { ImportBundle } from './import-xlsx';
 import type {
+  Account,
   Actual,
+  AgentProposal,
+  Capex,
+  Entry,
+  StaffPay,
   AuditEntry,
   Bill,
   Center,
@@ -60,6 +67,11 @@ const emptyData = (): Data => ({
   variances: {},
   inv: {},
   audit: {},
+  entries: [],
+  staff: [],
+  accounts: [],
+  capex: [],
+  proposals: [],
 });
 
 const byOrder = (a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0);
@@ -75,6 +87,10 @@ interface Toast {
 export interface AiInfo {
   on: boolean;
   images: boolean;
+  provider?: string;
+  tools?: boolean;
+  tiers?: Record<'precise' | 'everyday', { model: string; on: boolean }>;
+  missing?: string[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -149,7 +165,7 @@ function useStoreState() {
 
   /* ---------- load ---------- */
   const loadAll = useCallback(async () => {
-    const [org, settings, users, centers, heads, periods, versions, actuals, bills, variances, inv, audits] =
+    const [org, settings, users, centers, heads, periods, versions, actuals, bills, variances, inv, audits, entries, staff, accounts, capex, proposals] =
       await Promise.all([
         backend.get<Org>('org', 'main'),
         backend.get<Settings>('settings', 'main'),
@@ -163,6 +179,11 @@ function useStoreState() {
         backend.list<VarianceNote>('variances'),
         backend.list<InvTrack>('inv_track'),
         backend.list<{ id: string; entries: AuditEntry[] }>('audit_logs'),
+        backend.list<Entry>('entries'),
+        backend.list<StaffPay>('staff'),
+        backend.list<Account>('accounts'),
+        backend.list<Capex>('capex'),
+        backend.list<AgentProposal>('proposals'),
       ]);
     dataRef.current = {
       org: { ...DEFAULT_ORG, ...(org || {}) },
@@ -177,6 +198,11 @@ function useStoreState() {
       variances: Object.fromEntries(variances.map((v) => [v.id, v])),
       inv: Object.fromEntries(inv.map((v) => [v.id, v])),
       audit: Object.fromEntries(audits.map((d) => [d.id, { entries: d.entries || [] }])),
+      entries: entries.sort((a, b) => a.month.localeCompare(b.month) || a.id.localeCompare(b.id, 'en', { numeric: true })),
+      staff: staff.sort((a, b) => a.month.localeCompare(b.month) || a.id.localeCompare(b.id, 'en', { numeric: true })),
+      accounts: accounts.sort((a, b) => a.kind.localeCompare(b.kind) || Number(BigInt(b.amount) - BigInt(a.amount) > 0n) - Number(BigInt(b.amount) - BigInt(a.amount) < 0n)),
+      capex: capex.sort((a, b) => a.month.localeCompare(b.month) || (a.date || '').localeCompare(b.date || '')),
+      proposals: proposals.sort((a, b) => b.at.localeCompare(a.at)),
     };
     bump();
     return dataRef.current;
@@ -447,6 +473,65 @@ function useStoreState() {
         bump();
       },
 
+      /** ورود کامل فایل اکسل اطلاعات اولیه: داده‌ی کسب‌وکار جایگزین می‌شود؛ کاربران و تنظیمات می‌مانند. */
+      async importBundle(b: ImportBundle, file: string) {
+        const d = D();
+        const wipe: Record<string, { id: string }[]> = {
+          centers: d.centers, heads: d.heads, periods: d.periods, versions: d.versions, actuals: Object.values(d.actuals),
+          bills: d.bills, variances: Object.values(d.variances), inv_track: Object.values(d.inv),
+          entries: d.entries, staff: d.staff, accounts: d.accounts, capex: d.capex, proposals: d.proposals,
+        };
+        for (const [col, items] of Object.entries(wipe)) await pool(items, 8, (x) => backend.del(col, x.id));
+        const put = async (col: string, items: { id: string }[]) => pool(items, 8, (x) => backend.put(col, x.id, x));
+        await put('centers', b.centers);
+        await put('heads', b.heads);
+        await put('periods', b.periods);
+        await put('versions', b.versions);
+        await put('actuals', b.actuals);
+        await put('bills', b.bills);
+        await put('entries', b.entries);
+        await put('staff', b.staff);
+        await put('accounts', b.accounts);
+        await put('capex', b.capex);
+        await saveSettings({ has_sample: false, import_info: importInfo(b, file, username(), nowIso()) }, true);
+        const fresh = await loadAll();
+        const hist = fresh.periods.filter((p) => p.history).at(-1);
+        if (hist) setPid(hist.id);
+        audit('create', 'import', '-', `${file} — ${fa(b.counts.entries ?? 0)} ردیف سند، ${fa(b.counts.staff_rows ?? 0)} ردیف حقوق`);
+        return fresh;
+      },
+
+      async saveAccount(a: Account) {
+        if (String(a.party || '').trim().length < 2) throw userErr('نام طرف حساب را بنویسید.');
+        if (B(a.amount) <= 0n) throw userErr('مبلغ را وارد کنید.');
+        if (a.settled && B(a.settled) > B(a.amount)) throw userErr('مبلغ تسویه‌شده بیشتر از کل مبلغ است.');
+        const rec: Account = { ...a, id: a.id || uid('a_'), updated_by: username(), updated_at: nowIso() };
+        await backend.put('accounts', rec.id, rec);
+        const i = D().accounts.findIndex((x) => x.id === rec.id);
+        if (i >= 0) D().accounts[i] = rec;
+        else D().accounts.push(rec);
+        audit(a.id ? 'update' : 'create', 'account', rec.id, `${rec.party} — ${nf(rec.amount)}`);
+        bump();
+        return rec;
+      },
+
+      async deleteAccount(id: string) {
+        const a = D().accounts.find((x) => x.id === id);
+        await backend.del('accounts', id);
+        D().accounts = D().accounts.filter((x) => x.id !== id);
+        audit('delete', 'account', id, a?.party || '');
+        bump();
+      },
+
+      async saveProposal(p: AgentProposal) {
+        await backend.put('proposals', p.id, p);
+        const i = D().proposals.findIndex((x) => x.id === p.id);
+        if (i >= 0) D().proposals[i] = p;
+        else D().proposals.unshift(p);
+        bump();
+        return p;
+      },
+
       async saveOrg(patch: Partial<Org>) {
         const next = { ...D().org, ...patch, id: 'main' };
         await backend.put('org', 'main', next);
@@ -508,6 +593,7 @@ function useStoreState() {
           app: 'budgetyar', version: 2, exported_at: nowIso(), org: d.org, settings: d.settings,
           centers: d.centers, heads: d.heads, periods: d.periods, versions: d.versions,
           actuals: Object.values(d.actuals), bills: d.bills, variances: Object.values(d.variances), inv_track: Object.values(d.inv),
+          entries: d.entries, staff: d.staff, accounts: d.accounts, capex: d.capex, proposals: d.proposals,
         });
       },
 
@@ -516,9 +602,10 @@ function useStoreState() {
         const cur: Record<string, { id: string }[]> = {
           centers: d.centers, heads: d.heads, periods: d.periods, versions: d.versions,
           actuals: Object.values(d.actuals), bills: d.bills, variances: Object.values(d.variances), inv_track: Object.values(d.inv),
+          entries: d.entries, staff: d.staff, accounts: d.accounts, capex: d.capex, proposals: d.proposals,
         };
         for (const col of Object.keys(cur)) {
-          const incoming = (b as unknown as Record<string, { id: string }[]>)[col]!;
+          const incoming = (b as unknown as Record<string, { id: string }[] | undefined>)[col] ?? [];
           const keep = new Set(incoming.map((x) => x.id));
           await pool(cur[col]!.filter((x) => !keep.has(x.id)), 6, (x) => backend.del(col, x.id));
           await pool(incoming, 6, (x) => backend.put(col, x.id, x));
@@ -667,6 +754,11 @@ export interface BackupFile {
   bills: Bill[];
   variances: VarianceNote[];
   inv_track: InvTrack[];
+  entries?: Entry[];
+  staff?: StaffPay[];
+  accounts?: Account[];
+  capex?: Capex[];
+  proposals?: AgentProposal[];
 }
 
 export function validBackup(d: unknown): d is BackupFile {

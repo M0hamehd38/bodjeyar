@@ -7,3 +7,8 @@ next-env.d.ts
 .env.local
 npm-debug.log*
 .DS_Store
+
+# فایل‌های داده‌ی واقعی (اکسل و پشتیبان) در مخزن نروند
+*.xlsx
+budgetyar-*.json
+data-private/

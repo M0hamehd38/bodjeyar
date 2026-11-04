@@ -191,7 +191,7 @@ interface Change {
 /** پیشنهاد اصلاحیه برای ماه‌های باقی‌مانده بر پایه‌ی روند عملکرد. */
 function RevisionAi({ L, p, onCreated }: { L: Ledger; p: Period; onCreated: (id: string) => void }) {
   const { ai, repo, toast, audit } = useStore();
-  const task = useAiTask();
+  const task = useAiTask('revision_suggest');
   const [R, setR] = useState<{ reason: string; summary: string; changes: Change[] } | null>(null);
   const [busy, setBusy] = useState(false);
   if (!ai.on) return null;

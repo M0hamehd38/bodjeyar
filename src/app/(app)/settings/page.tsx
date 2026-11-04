@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState, type FormEvent } from 'react';
 import { BrandLockup } from '@/components/brand';
+import { ExcelImport } from '@/components/excel-import';
 import { SmallNumberInput, StatusBadge } from '@/components/budget';
 import { Icon } from '@/components/icons';
 import { Alert, Badge, Button, Card, CardHeader, EmptyState, ErrorText, Field, Input, PageHeader, Select, TableWrap, Tabs } from '@/components/ui';
@@ -12,7 +13,8 @@ import { fa, jFa } from '@/lib/format';
 import { auditText, BILL_TYPES, ROLE_LABEL } from '@/lib/ledger';
 import { downloadText, fileName } from '@/lib/report';
 import { useStore, validBackup, type BackupFile } from '@/lib/store';
-import type { Center, Head, Role } from '@/lib/types';
+import { AI_PURPOSE_KEYS, AI_PURPOSES, AI_TIERS, TIER_INFO, tierFor } from '@/lib/ai-purposes';
+import type { AiTier, Center, Head, Role } from '@/lib/types';
 
 const TABS = [
   ['org', 'هویت سازمان'],
@@ -20,6 +22,7 @@ const TABS = [
   ['structure', 'مراکز و سرفصل‌ها'],
   ['users', 'کاربران'],
   ['data', 'داده‌ها'],
+  ['ai', 'هوش مصنوعی'],
   ['log', 'رویدادها'],
   ['me', 'حساب من'],
 ] as const;
@@ -56,6 +59,7 @@ function Settings() {
       {tab === 'structure' && <StructureTab />}
       {tab === 'users' && <UsersTab />}
       {tab === 'data' && <DataTab />}
+      {tab === 'ai' && <AiTab />}
       {tab === 'log' && <LogTab />}
       {tab === 'me' && <MeTab />}
     </>
@@ -546,6 +550,9 @@ function DataTab() {
   const [busy, setBusy] = useState(false);
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      <div className="lg:col-span-2">
+        <ExcelImport />
+      </div>
       <Card>
         <CardHeader title="پشتیبان‌گیری" icon={<Icon.download size={18} />} />
         <p className="mb-4 text-sm leading-relaxed text-slate-500">
@@ -670,10 +677,101 @@ function DataTab() {
           </>
         )}
         <div className="mt-5 space-y-1.5 border-t border-slate-100 pt-4 text-xs text-slate-500">
-          <p>دستیار هوش مصنوعی: {ai.on ? 'فعال — از سرور با کلید API سازمان.' : 'غیرفعال (کلید ANTHROPIC_API_KEY روی سرور تنظیم نشده).'}</p>
+          <p>دستیار هوش مصنوعی: {ai.on ? 'فعال — از سرور با کلید درگاه سازمان.' : 'غیرفعال (کلید درگاه هوش مصنوعی روی سرور تنظیم نشده).'}</p>
           <p>محل ذخیره: حافظه همین مرورگر؛ مرتب پشتیبان بگیرید.</p>
         </div>
       </Card>
+    </div>
+  );
+}
+
+/** تنظیمات هوش مصنوعی — برای هر کاربرد، «مدل دقیق» یا «مدل روزمره» (همان الگوی هوش سازمانی). */
+function AiTab() {
+  const { data, ai, repo, toast } = useStore();
+  const [draft, setDraft] = useState<Record<string, AiTier>>(() =>
+    Object.fromEntries(AI_PURPOSE_KEYS.map((k) => [k, tierFor(data.settings.ai_tiers, k)])),
+  );
+  const [busy, setBusy] = useState(false);
+  const setAll = (t: AiTier) => setDraft(Object.fromEntries(AI_PURPOSE_KEYS.map((k) => [k, t])));
+  return (
+    <div className="max-w-3xl space-y-5">
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-sm">
+        <span className="text-slate-600">وضعیت:</span>
+        {ai.on ? <Badge tone="ok">متصل به درگاه هوش مصنوعی</Badge> : <Badge tone="danger">کلید درگاه تنظیم نشده</Badge>}
+        {ai.provider && <span className="text-xs text-slate-500">سرویس‌دهنده: {ai.provider === 'arvan' ? 'آروان' : ai.provider === 'anthropic' ? 'Anthropic' : 'OpenAI'}</span>}
+        {!ai.on && ai.missing?.length ? (
+          <span className="text-xs text-slate-500" dir="ltr">
+            missing: {ai.missing.join(', ')}
+          </span>
+        ) : null}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {AI_TIERS.map((t) => (
+          <div key={t} className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-900">
+                {t === 'precise' ? <Icon.target size={18} className="ml-1.5 inline text-brand-500" /> : <Icon.pulse size={18} className="ml-1.5 inline text-brand-500" />}
+                {TIER_INFO[t].label}
+              </span>
+              <button type="button" onClick={() => setAll(t)} className="text-xs text-brand-700 hover:underline">
+                برای همه
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">{TIER_INFO[t].note}</p>
+            <p className="mt-2 flex items-center gap-2 text-[11px] text-slate-400" dir="ltr">
+              {ai.tiers?.[t]?.model ?? '—'}
+              {ai.tiers && <Badge tone={ai.tiers[t].on ? 'ok' : 'neutral'}>{ai.tiers[t].on ? 'on' : 'off'}</Badge>}
+            </p>
+          </div>
+        ))}
+      </div>
+      <Card className="p-0">
+        <TableWrap className="sm:border-0">
+          <table className="ledger">
+            <thead>
+              <tr>
+                <th>کاربرد</th>
+                <th>مدل</th>
+              </tr>
+            </thead>
+            <tbody>
+              {AI_PURPOSE_KEYS.map((k) => (
+                <tr key={k}>
+                  <td>
+                    <b className="text-navy-900">{AI_PURPOSES[k].label}</b>
+                    <div className="text-xs text-slate-500">{AI_PURPOSES[k].description}</div>
+                  </td>
+                  <td className="min-w-44">
+                    <Select compact aria-label={`مدل ${AI_PURPOSES[k].label}`} value={draft[k]} onChange={(e) => setDraft((d) => ({ ...d, [k]: e.target.value as AiTier }))}>
+                      {AI_TIERS.map((t) => (
+                        <option key={t} value={t}>
+                          {TIER_INFO[t].label}
+                          {t === AI_PURPOSES[k].tier ? ' (پیش‌فرض)' : ''}
+                        </option>
+                      ))}
+                    </Select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableWrap>
+      </Card>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="primary"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            await repo.saveSettings({ ai_tiers: draft });
+            toast('مدل‌های هوش مصنوعی ذخیره شد؛ از درخواست بعدی اثر می‌کند.', 'ok');
+            setBusy(false);
+          }}
+        >
+          ذخیره
+        </Button>
+        <p className="text-xs text-slate-500">کلیدها فقط روی سرور (‎.env.local) هستند؛ همان متغیرهای «هوش سازمانی»: ARVAN_AI_API_KEY، ARVAN_PRECISE_MODEL، ARVAN_EVERYDAY_MODEL و کلیدهای جدای هر مدل.</p>
+      </div>
     </div>
   );
 }

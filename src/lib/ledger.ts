@@ -305,6 +305,47 @@ export class Ledger {
     };
   }
 
+  /** دوره‌ی مرجع: عملکرد دارد ولی بودجه‌ی تأییدشده ندارد — مقایسه‌ی بودجه معنا ندارد. */
+  isHistory = (p: Period) => !this.activeV(p.id) && (!!p.history || this.monthsWithActual(p).length > 0);
+
+  /**
+   * نسخه‌ی «فقط عملکرد» برای ثبت و نمایش عملکرد دوره‌ی بی‌بودجه: ردیف‌ها همان
+   * ساختار مراکز و سرفصل‌ها و هر کلیدی است که در عملکرد دوره آمده؛ بودجه صفر.
+   */
+  entryVersion(p: Period): Version {
+    const n = p.months;
+    const z = () => Array<string>(n).fill('0');
+    const ms = monthsOf(p);
+    const expKeys = new Set<string>();
+    const payKeys = new Set<string>();
+    for (const m of ms) {
+      const a = this.d.actuals[m.k];
+      Object.keys(a?.expense || {}).forEach((k) => expKeys.add(k));
+      Object.keys(a?.payroll || {}).forEach((k) => payKeys.add(k));
+      Object.keys(this.billAlloc(m.k)).forEach((k) => expKeys.add(k));
+    }
+    for (const c of this.costCenters()) if (c.has_staff !== false && !payKeys.size) payKeys.add(c.id);
+    return {
+      id: `__actual_${p.id}`, period_id: p.id, number: 0, title: p.title, status: 'approved', reason: '', wizard_step: 0,
+      created_by: '', created_at: '', updated_at: '', rev: 0,
+      revenue: this.revCenters().map((c) => ({ center: c.id, months: z() })),
+      expense: [...expKeys].map((k) => ({ head: k.split('|')[0]!, center: k.split('|')[1]!, months: z() })),
+      payroll: [...payKeys].map((c) => ({ center: c, headcount: '0', base: '0', overtime: '0', benefits: '0', bonus: '0', insurance: '0', eidi: '0', other: '0' })),
+      investments: [],
+    };
+  }
+
+  /** جمع عملکرد ماهانه‌ی هر نوع — برای دوره‌های بی‌بودجه و روند. */
+  actualTotals(mk: string) {
+    const a = this.d.actuals[mk];
+    const sum = (r?: Record<string, string>) => Object.values(r || {}).reduce((s, x) => s + B(x), 0n);
+    const bills = Object.values(this.billAlloc(mk)).reduce((s, x) => s + x, 0n);
+    const R = sum(a?.revenue);
+    const E = sum(a?.expense) + bills;
+    const P = sum(a?.payroll);
+    return { R, E, P, bills, net: R - E - P };
+  }
+
   monthsWithActual = (p: Period) => monthsOf(p).filter((m) => this.hasActual(m.k));
   missingMonths(p: Period) {
     const nowK = todayKey();
@@ -406,6 +447,9 @@ export const AUDIT_ENT: Record<string, string> = {
   sample: 'داده نمونه',
   backup: 'پشتیبان',
   report: 'گزارش',
+  import: 'ورود از اکسل',
+  account: 'حساب دریافتنی/پرداختنی',
+  agent: 'ایجنت مالی',
 };
 export const auditText = (a: { action: string; entity: string; detail?: string }) =>
   `${AUDIT_ACT[a.action] || a.action} ${AUDIT_ENT[a.entity] || a.entity}${a.detail ? `: ${a.detail}` : ''}`;

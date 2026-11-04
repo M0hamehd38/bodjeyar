@@ -13,6 +13,7 @@ import {
   StatusBadge,
 } from '@/components/budget';
 import { ChartLegend, MonthlyChart } from '@/components/charts';
+import { HistoryDashboard } from '@/components/history-dashboard';
 import { Icon } from '@/components/icons';
 import { Alert, Button, Card, CardHeader, EmptyState, Input, Meter, Segmented, Select, Stat, TableWrap } from '@/components/ui';
 import { AI_RULE_FA, aiPeriodData, useAiTask } from '@/lib/ai';
@@ -84,6 +85,14 @@ export default function DashboardPage() {
       <b>{fa(pending)} نسخه بودجه</b> منتظر تأیید شماست.
     </Alert>
   ) : null;
+
+  if (!v && L.isHistory(p))
+    return (
+      <>
+        {pendAlert}
+        <HistoryDashboard L={L} p={p} />
+      </>
+    );
 
   if (!v)
     return (
@@ -295,7 +304,7 @@ const CHIPS = [
 /** پرسش مدیر از داده‌ها — جواب فقط بر پایه‌ی ارقام همین دوره. */
 function AskPanel({ L, p }: { L: Ledger; p: Period }) {
   const { ai } = usePeriod();
-  const task = useAiTask();
+  const task = useAiTask('dashboard_qa');
   const [q, setQ] = useState('');
   const [turns, setTurns] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
   if (!ai.on) return null;

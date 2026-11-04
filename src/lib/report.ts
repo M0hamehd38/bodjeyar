@@ -66,7 +66,9 @@ export function buildReport(L: Ledger, pid: string | null, r: ReportFilter): Rep
   const scope = r.mi === 'all' ? `${p.title} (ماه‌های دارای عملکرد)` : mName(ms[+r.mi]!.jy, ms[+r.mi]!.jm);
   const fC = (row: Row) => (!r.center || row.type !== 'revenue' || row.center === r.center) && (!r.cost || row.type === 'revenue' || row.center === r.cost);
   const out: Report = { title: REPORTS[r.type], scope, cols: [], rows: [], foot: null, note: '' };
-  if (!v && r.type !== 'investment') return { ...out, empty: 'برای این دوره بودجه تأییدشده‌ای نیست.' };
+  if (!v && L.isHistory(p) && r.type !== 'investment' && r.type !== 'compare') return historyReport(L, p, idxs, r, out, fC);
+  const histCompare = !v && r.type === 'compare' && L.isHistory(p);
+  if (!v && r.type !== 'investment' && !histCompare) return { ...out, empty: 'برای این دوره بودجه تأییدشده‌ای نیست.' };
   const rows = v ? L.analyze(p.id, idxs).rows.filter(fC) : [];
 
   if (r.type === 'summary') {
@@ -230,6 +232,65 @@ export function buildReport(L: Ledger, pid: string | null, r: ReportFilter): Rep
       line('جمع هزینه', isExp),
     ];
     out.note = 'دو ماه از دوره جاری را مقایسه می‌کند. ماه دوم را از فیلتر «ماه مقایسه» انتخاب کنید.';
+  }
+  return out;
+}
+
+/** گزارش دوره‌ی مرجع (عملکرد بدون بودجه): ستون بودجه و انحراف ندارد. */
+function historyReport(L: Ledger, p: import('./types').Period, idxs: number[], r: ReportFilter, out: Report, fC: (row: Row) => boolean): Report {
+  if (r.type === 'bva' || r.type === 'variance')
+    return { ...out, empty: 'این دوره‌ی مرجع است و بودجه ندارد؛ گزارش انحراف برای دوره‌ای معنا دارد که بودجه‌ی تأییدشده دارد. گزارش‌های خلاصه، درآمد، هزینه، واحدها و حقوق را ببینید.' };
+  const rows = L.analyze(p.id, idxs).rows.filter(fC);
+  if (!idxs.length || !rows.length) return { ...out, empty: 'برای این بازه عملکردی ثبت نشده است.' };
+  const ms = monthsOf(p).filter((m) => idxs.includes(m.i));
+  const sum = (f: (x: Row) => boolean) => sumB(rows.filter(f).map((x) => x.actual));
+  const R = sum(isRev);
+  const E = sum((x) => x.type === 'expense');
+  const P = sum((x) => x.type === 'payroll');
+  const byMonth = (x: Row) => ms.map((m) => C.m(L.actualValue(x.type, x.key, m.k)));
+  const mcols = ms.map((m) => MONTHS[m.jm - 1]!);
+  out.note = 'دوره‌ی مرجع: فقط عملکرد واقعی (از فایل اطلاعات اولیه)؛ بودجه‌ای برای مقایسه نیست.';
+  if (r.type === 'summary') {
+    out.cols = ['شاخص', ...mcols, 'جمع', 'سهم از درآمد'];
+    const T = ms.map((m) => L.actualTotals(m.k));
+    const line = (label: string, f: (t: ReturnType<Ledger['actualTotals']>) => bigint, total: bigint) => [C.t(label), ...T.map((t) => C.m(f(t))), C.m(total), C.p(ratio(total, R))];
+    out.rows = [
+      line('درآمد', (t) => t.R, R),
+      line('هزینه (با قبوض)', (t) => t.E, E),
+      line('حقوق و مزایا', (t) => t.P, P),
+      line('نتیجه‌ی عملیاتی', (t) => t.net, R - E - P),
+    ];
+  } else if (r.type === 'revenue') {
+    out.cols = ['مرکز درآمد', 'گروه', ...mcols, 'جمع', 'سهم'];
+    out.rows = rows.filter(isRev).sort((a, b) => (b.actual > a.actual ? 1 : -1)).map((x) => [C.t(L.cName(x.center)), C.t(L.centerById(x.center)?.group || '—'), ...byMonth(x), C.m(x.actual), C.p(ratio(x.actual, R))]);
+    out.foot = [C.t('جمع'), C.t(''), ...ms.map((m) => C.m(L.actualTotals(m.k).R)), C.m(R), C.p(100)];
+  } else if (r.type === 'expense') {
+    out.cols = ['سرفصل', 'گروه', 'مرکز هزینه', ...mcols, 'جمع', 'سهم'];
+    const ex = rows.filter((x) => x.type === 'expense').sort((a, b) => (b.actual > a.actual ? 1 : -1));
+    out.rows = ex.map((x) => [C.t(x.label), C.t(L.headById(x.head)?.kind === 'variable' ? 'متغیر' : 'ثابت'), C.t(L.cName(x.center)), ...byMonth(x), C.m(x.actual), C.p(ratio(x.actual, E))]);
+    out.foot = [C.t('جمع'), C.t(''), C.t(''), ...ms.map((m) => C.m(sumB(ex.map((x) => L.actualValue(x.type, x.key, m.k))))), C.m(E), C.p(100)];
+    out.note += ' حقوق و مزایا در گزارش جداگانه آمده است.';
+  } else if (r.type === 'units') {
+    out.cols = ['واحد', 'درآمد مرتبط', 'هزینه', 'حقوق', 'هزینه کل', 'نتیجه‌ی مستقیم', 'سهم از هزینه کل'];
+    out.rows = L.costCenters(true)
+      .filter((c) => !r.cost || c.id === r.cost)
+      .map((c) => {
+        const rv = sum((x) => isRev(x) && L.centerById(x.center)?.link === c.id);
+        const ex = sum((x) => x.type === 'expense' && x.center === c.id);
+        const py = sum((x) => x.type === 'payroll' && x.center === c.id);
+        return [C.t(c.name), rv ? C.m(rv) : C.t('—'), C.m(ex), C.m(py), C.m(ex + py), rv ? C.m(rv - ex - py) : C.t('پشتیبان'), C.p(ratio(ex + py, E + P))];
+      })
+      .filter((row) => row[4]!.n !== 0);
+    out.note = 'درآمد واحد از مراکز درآمد مرتبط با آن (تنظیمات › مراکز) خوانده می‌شود؛ واحدهای پشتیبان درآمد مستقیم ندارند.';
+  } else if (r.type === 'payroll') {
+    out.cols = ['واحد', 'نفرات دفتر حقوق', ...mcols, 'جمع', 'سهم از درآمد'];
+    const py = rows.filter((x) => x.type === 'payroll');
+    out.rows = py.map((x) => {
+      const people = new Set(L.d.staff.filter((s) => s.center === x.center && ms.some((m) => m.k === s.month)).map((s) => s.person)).size;
+      return [C.t(L.cName(x.center)), C.t(people ? fa(people) : '—'), ...byMonth(x), C.m(x.actual), C.p(ratio(x.actual, R))];
+    });
+    out.foot = [C.t('جمع'), C.t(fa(new Set(L.d.staff.filter((s) => ms.some((m) => m.k === s.month)).map((s) => s.person)).size)), ...ms.map((m) => C.m(L.actualTotals(m.k).P)), C.m(P), C.p(ratio(P, R))];
+    out.note = 'حقوق حسابداری (حقوق، بیمه و سنوات از شیت هزینه‌ها)؛ ریز نفر به نفر در بخش «پرسنل و حقوق».';
   }
   return out;
 }
