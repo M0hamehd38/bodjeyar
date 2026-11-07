@@ -1,0 +1,76 @@
+# استقرار خودکار بودجه‌یار — با هر push به main.
+# ساخت روی GitHub انجام می‌شود (سرور مشترک رم کمی دارد)؛ خروجی standalone با SSH به
+# سرور می‌رود. کلید استقرار روی سرور فقط اجازه‌ی اجرای /opt/bodjeyar/remote-deploy.sh
+# را دارد (پشتیبان دیتابیس، بررسی سلامت، بازگشت خودکار به نسخه‌ی قبل).
+#
+# Secrets لازم: DEPLOY_SSH_KEY (کلید خصوصی ed25519)، DEPLOY_KNOWN_HOSTS (ssh-keyscan سرور)
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  DEPLOY_HOST: 188.121.125.13
+  DEPLOY_USER: root
+
+jobs:
+  deploy:
+    name: ساخت و استقرار
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+
+      - name: ساخت (با پایگاه داده‌ی سرور)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_BACKEND: api
+          NEXT_TELEMETRY_DISABLED: '1'
+
+      - name: بسته‌ی استقرار
+        run: |
+          mkdir -p out/app/.next
+          cp -a .next/standalone/. out/app/
+          cp -a .next/static out/app/.next/static
+          cp -a public out/app/public
+          echo "$GITHUB_SHA" > out/VERSION
+          tar -C out -czf "$RUNNER_TEMP/bundle.tar.gz" .
+          du -h "$RUNNER_TEMP/bundle.tar.gz"
+
+      - name: آماده‌سازی SSH
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: ارسال و استقرار
+        run: |
+          for attempt in 1 2 3; do
+            if ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o ServerAliveInterval=15 \
+                 "$DEPLOY_USER@$DEPLOY_HOST" deploy < "$RUNNER_TEMP/bundle.tar.gz"; then
+              exit 0
+            fi
+            echo "تلاش $attempt ناموفق؛ ۲۰ ثانیه بعد دوباره"; sleep 20
+          done
+          exit 1
+
+      - name: بررسی سایت
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://budget.saipaostovar.com/ || true)
+          echo "پاسخ: $code (۴۰۱ یعنی دروازه‌ی ورود سالم است)"
+          [ "$code" = 401 ] || [ "$code" = 200 ]

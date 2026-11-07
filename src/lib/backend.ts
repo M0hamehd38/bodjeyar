@@ -62,11 +62,43 @@ class LocalBackend implements Backend {
   }
 }
 
-export const backend = new LocalBackend();
+/**
+ * پیاده‌سازی سرور: همین رابط با فراخوانی /api/db (SQLite روی سرور).
+ * با NEXT_PUBLIC_BACKEND=api هنگام build انتخاب می‌شود؛ بدون آن همان localStorage است.
+ */
+class ApiBackend implements Backend {
+  private async call<R>(method: string, qs: string, body?: unknown): Promise<R> {
+    const res = await fetch(`/api/db${qs}`, {
+      method,
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'budgetyar' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (!res.ok) throw { code: `db_${res.status}` };
+    return (await res.json()) as R;
+  }
+  async get<T>(col: string, id: string) {
+    const r = await this.call<{ doc: T | null }>('GET', `?col=${encodeURIComponent(col)}&id=${encodeURIComponent(id)}`);
+    return r.doc;
+  }
+  async list<T>(col: string) {
+    const r = await this.call<{ docs: T[] }>('GET', `?col=${encodeURIComponent(col)}`);
+    return r.docs;
+  }
+  async put<T extends object>(col: string, id: string, data: T) {
+    await this.call('PUT', '', { col, id, data: { ...data, id } });
+  }
+  async del(col: string, id: string) {
+    await this.call('DELETE', `?col=${encodeURIComponent(col)}&id=${encodeURIComponent(id)}`);
+  }
+}
+
+const local = new LocalBackend();
+export const backend: Backend = process.env.NEXT_PUBLIC_BACKEND === 'api' ? new ApiBackend() : local;
 
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (e.key === LKEY) backend.invalidate();
+    if (e.key === LKEY) local.invalidate();
   });
 }
 
@@ -96,5 +128,6 @@ export function errMsg(e: unknown): string {
   if (x?.conflict)
     return 'این مورد هم‌زمان در زبانه یا دستگاه دیگری ذخیره شده است. صفحه به‌روز شد؛ تغییرتان را دوباره اعمال کنید.';
   if (x?.code === 'quota_exceeded') return 'فضای ذخیره‌سازی پر است. داده‌های قدیمی یا نمونه را حذف کنید.';
+  if (x?.code?.startsWith('db_')) return 'ارتباط با پایگاه داده برقرار نشد. اینترنت را بررسی و دوباره تلاش کنید.';
   return x?.user || 'ذخیره انجام نشد. دوباره تلاش کنید.';
 }

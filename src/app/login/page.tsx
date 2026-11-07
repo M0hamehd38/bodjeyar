@@ -30,7 +30,8 @@ export default function LoginPage() {
     fullName: '',
     accUser: '',
     accPw: '',
-    sample: true,
+    // با پایگاه داده‌ی سرور داده‌ی واقعی از قبل در آن است؛ نمونه‌ی ساختگی هرگز ساخته نشود
+    sample: process.env.NEXT_PUBLIC_BACKEND !== 'api',
   });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
 
@@ -176,6 +177,7 @@ export default function LoginPage() {
                     </Field>
                   </div>
                 </details>
+                {process.env.NEXT_PUBLIC_BACKEND !== 'api' && (
                 <label className="flex items-start gap-2.5 text-sm text-slate-700">
                   <input
                     type="checkbox"
@@ -185,6 +187,7 @@ export default function LoginPage() {
                   />
                   با داده نمونه نمایندگی شروع کن (شش‌ماهه اول ۱۴۰۵ با عملکرد کامل و شش‌ماهه دوم منتظر تأیید؛ از تنظیمات حذف می‌شود)
                 </label>
+                )}
               </>
             )}
             <ErrorText>{error}</ErrorText>

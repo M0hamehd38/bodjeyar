@@ -1,0 +1,25 @@
+# بودجه‌یار — ابزار تصمیم مالی (Next.js standalone)
+# به‌روزرسانی: بسته‌ی app/ را جایگزین کنید و docker compose up -d --build
+name: bodjeyar
+services:
+  bodjeyar:
+    build: .
+    image: bodjeyar:latest
+    container_name: bodjeyar-web
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/data
+    networks: [vm_default]
+    mem_limit: 384m
+    cpus: 0.5
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+# شبکه‌ی Caddy مشترک سرور؛ نام سرویس عمداً یکتاست (نه web) چون alias «web» روی این شبکه چند کانتینر دارد
+networks:
+  vm_default:
+    external: true
